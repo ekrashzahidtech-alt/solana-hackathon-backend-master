@@ -30,11 +30,27 @@ async fn main() -> anyhow::Result<()> {
 
     let db_for_migrate = db.clone();
     tokio::spawn(async move {
-        tracing::info!("Running database migrations in background...");
-        if let Err(e) = sqlx::migrate!("./migrations").run(&db_for_migrate).await {
-            tracing::error!("Database migration failed: {:?}. Continuing without blocking server start.", e);
-        } else {
-            tracing::info!("Migrations applied successfully.");
+        tracing::info!("Running database migrations in background with retry...");
+        let mut attempt: u32 = 0;
+        let max_attempts: u32 = 10;
+        loop {
+            attempt += 1;
+            match sqlx::migrate!("./migrations").run(&db_for_migrate).await {
+                Ok(_) => {
+                    tracing::info!("Migrations applied successfully on attempt {}.", attempt);
+                    break;
+                }
+                Err(e) => {
+                    if attempt >= max_attempts {
+                        tracing::error!("Database migration failed after {} attempts: {:?}. Giving up.", attempt, e);
+                        break;
+                    } else {
+                        let backoff = std::time::Duration::from_secs(5 * attempt as u64);
+                        tracing::warn!("Migration attempt {} failed: {:?}. Retrying in {}s...", attempt, e, backoff.as_secs());
+                        tokio::time::sleep(backoff).await;
+                    }
+                }
+            }
         }
     });
 
