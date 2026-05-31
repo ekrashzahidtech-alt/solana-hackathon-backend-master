@@ -1,6 +1,7 @@
 use std::{env, path::PathBuf};
 
 use anyhow::{Context, Result};
+use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -37,14 +38,33 @@ impl Settings {
         let _ = dotenvy::dotenv();
 
         Ok(Self {
-            database_url: env::var("DATABASE_URL")
-                .context("DATABASE_URL is not set. Please configure it in your .env file")?,
+            // Allow startup even when `DATABASE_URL` is not set so the HTTP
+            // server (and health endpoint) can come up during platform
+            // provisioning. Use a harmless placeholder URL that has the
+            // correct format so `sqlx::PgPool::connect_lazy` can create a
+            // pool object without attempting a network connection.
+            database_url: match env::var("DATABASE_URL") {
+                Ok(v) if !v.is_empty() => v,
+                _ => {
+                    warn!("DATABASE_URL is not set. Using placeholder URL so process can start — set DATABASE_URL in your environment for production.");
+                    "postgres://localhost:5432/placeholder".to_string()
+                }
+            },
             database_max_connections: env::var("DATABASE_MAX_CONNECTIONS").ok().and_then(|v| v.parse().ok()).unwrap_or(5),
             database_min_connections: env::var("DATABASE_MIN_CONNECTIONS").ok().and_then(|v| v.parse().ok()).unwrap_or(1),
             database_connect_timeout_seconds: env::var("DATABASE_CONNECT_TIMEOUT_SECONDS").ok().and_then(|v| v.parse().ok()).unwrap_or(10),
             redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string()),
             redis_max_connections: env::var("REDIS_MAX_CONNECTIONS").ok().and_then(|v| v.parse().ok()).unwrap_or(20),
-            jwt_secret: env::var("JWT_SECRET").context("JWT_SECRET is not set. Please configure it in your .env file")?,
+            // JWT secret is required for signing tokens; default to a
+            // non-secure development secret when missing so the process
+            // doesn't exit during platform provisioning. Warn loudly.
+            jwt_secret: match env::var("JWT_SECRET") {
+                Ok(v) if !v.is_empty() => v,
+                _ => {
+                    warn!("JWT_SECRET is not set. Using a development fallback secret — set JWT_SECRET in your environment for production.");
+                    "dev-insecure-secret".to_string()
+                }
+            },
             jwt_expiry_hours: env::var("JWT_EXPIRY_HOURS").ok().and_then(|v| v.parse().ok()).unwrap_or(24),
             storage_path: env::var("STORAGE_PATH").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("./uploads")),
             cloudinary_cloud_name: env::var("CLOUDINARY_CLOUD_NAME").ok(),
