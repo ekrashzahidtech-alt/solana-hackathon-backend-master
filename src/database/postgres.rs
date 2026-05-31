@@ -16,7 +16,8 @@ pub async fn create_pool(settings: &Settings) -> Result<DbPool> {
         .max_connections(settings.database_max_connections)
         .min_connections(settings.database_min_connections)
         .acquire_timeout(Duration::from_secs(settings.database_connect_timeout_seconds))
-        .connect_lazy(&settings.database_url);
+        .connect_lazy(&settings.database_url)
+        .with_context(|| "Failed to create lazy Postgres pool. Check DATABASE_URL format.")?;
 
     Ok(pool)
 }
