@@ -1,4 +1,4 @@
-FROM rust:nightly-bookworm AS builder
+FROM rust:bookworm AS builder
 
 WORKDIR /app
 
@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     llvm \
     libudev-dev \
     && rm -rf /var/lib/apt/lists/*
+
+RUN rustup toolchain install nightly && rustup default nightly
 
 COPY Cargo.toml Cargo.lock ./
 RUN cargo fetch --locked
