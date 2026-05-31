@@ -13,12 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rustup toolchain install nightly && rustup default nightly
 
 COPY Cargo.toml Cargo.lock ./
-RUN cargo fetch --locked
+RUN cargo fetch
 
 COPY src ./src
 COPY migrations ./migrations
 
-RUN cargo build --release --locked --bin backend-rust
+RUN cargo build --release --bin backend-rust
 
 FROM debian:bookworm-slim AS runtime
 
