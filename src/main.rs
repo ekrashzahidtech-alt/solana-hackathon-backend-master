@@ -21,19 +21,22 @@ async fn main() -> anyhow::Result<()> {
     let settings = Settings::from_env()?;
 
     // -----------------------------------------------------------------------
-    // Database — connect and run pending migrations automatically.
+    // Database — connect and run pending migrations in background.
+    // We run migrations in a detached task so the HTTP server (and `/health`)
+    // becomes available even if the DB is temporarily unreachable during
+    // deployment. Migration failures are logged but do not crash the process.
     // -----------------------------------------------------------------------
     let db = create_pool(&settings).await?;
 
-    tracing::info!("Running database migrations…");
-    sqlx::migrate!("./migrations")
-        .run(&db)
-        .await
-        .map_err(|e| {
-            tracing::error!("Migration failed: {:?}", e);
-            e
-        })?;
-    tracing::info!("Migrations applied successfully.");
+    let db_for_migrate = db.clone();
+    tokio::spawn(async move {
+        tracing::info!("Running database migrations in background...");
+        if let Err(e) = sqlx::migrate!("./migrations").run(&db_for_migrate).await {
+            tracing::error!("Database migration failed: {:?}. Continuing without blocking server start.", e);
+        } else {
+            tracing::info!("Migrations applied successfully.");
+        }
+    });
 
     // -----------------------------------------------------------------------
     // Other services
