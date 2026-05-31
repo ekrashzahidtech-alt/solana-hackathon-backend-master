@@ -8,20 +8,15 @@ use crate::config::Settings;
 pub type DbPool = PgPool;
 
 pub async fn create_pool(settings: &Settings) -> Result<DbPool> {
+    // Use `connect_lazy` so creating the pool does not attempt an immediate
+    // network connection. This allows the HTTP server (and `/health` probe)
+    // to start even if the database is temporarily unavailable during
+    // deployment. Actual queries will still try to connect when executed.
     let pool = PgPoolOptions::new()
         .max_connections(settings.database_max_connections)
         .min_connections(settings.database_min_connections)
         .acquire_timeout(Duration::from_secs(settings.database_connect_timeout_seconds))
-        .connect(&settings.database_url)
-        .await
-        .with_context(|| {
-            "Failed to connect to PostgreSQL. Check DATABASE_URL and DB availability.".to_string()
-        })?;
-
-    sqlx::query("SELECT 1")
-        .execute(&pool)
-        .await
-        .context("PostgreSQL connection established but health check failed")?;
+        .connect_lazy(&settings.database_url);
 
     Ok(pool)
 }
